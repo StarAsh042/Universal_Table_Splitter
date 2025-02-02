@@ -61,4 +61,5 @@ A：系统需支持中文字体（Windows/Linux默认支持，macOS需安装字�
 相关错误截图
 
 Powered by StarAsh042
+## 许可证
 本项目基于 [GNU Affero General Public License v3.0](LICENSE) 开源。
