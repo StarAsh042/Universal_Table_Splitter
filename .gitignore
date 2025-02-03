@@ -1,0 +1,18 @@
+通用表格分割器.spec
+Universal Table Splitter.jpg
+build/通用表格分割器/通用表格分割器.pkg
+build/通用表格分割器/Analysis-00.toc
+build/通用表格分割器/base_library.zip
+build/通用表格分割器/EXE-00.toc
+build/通用表格分割器/PKG-00.toc
+build/通用表格分割器/PYZ-00.pyz
+build/通用表格分割器/PYZ-00.toc
+build/通用表格分割器/warn-通用表格分割器.txt
+build/通用表格分割器/xref-通用表格分割器.html
+build/通用表格分割器/localpycs/pyimod01_archive.pyc
+build/通用表格分割器/localpycs/pyimod02_importers.pyc
+build/通用表格分割器/localpycs/pyimod03_ctypes.pyc
+build/通用表格分割器/localpycs/pyimod04_pywin32.pyc
+build/通用表格分割器/localpycs/struct.pyc
+dist/通用表格分割器.exe
+dist/Universal Table Splitter.zip
