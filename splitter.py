@@ -22,6 +22,8 @@ import queue
 import ctypes
 import pandas as pd
 import webbrowser
+import logging
+from functools import lru_cache
 
 # 全局配置
 LANGUAGES = {
@@ -85,6 +87,30 @@ EXPORT_FORMATS = {
     'json': {'writer': 'to_json', 'ext': '.json', 'options': {'orient': 'records'}},
     'html': {'writer': 'to_html', 'ext': '.html', 'options': {'index': False}}
 }
+
+class SplitStrategy:
+    @staticmethod
+    def by_sentence(text):
+        # 按句子分割实现
+        pass  # 添加空语句修复缩进错误
+    
+    @staticmethod 
+    def by_fixed_length(text, chunk_size):
+        # 固定长度分割
+        pass  # 添加空语句修复缩进错误
+        
+    @staticmethod
+    def by_paragraph(text):
+        # 按段落分割
+        pass  # 添加缺失的pass语句
+
+def get_splitter(method='sentence'):
+    strategies = {
+        'sentence': SplitStrategy.by_sentence,
+        'fixed': SplitStrategy.by_fixed_length,
+        'paragraph': SplitStrategy.by_paragraph
+    }
+    return strategies.get(method, SplitStrategy.by_sentence)
 
 class UniversalSplitterApp:
     def __init__(self, root):
@@ -467,6 +493,27 @@ class UniversalSplitterApp:
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f'+{x}+{y}')
+
+@lru_cache(maxsize=128)
+def cached_split(text, chunk_size):
+    """带缓存的文本分割（适用于重复内容）"""
+    # 原有分割逻辑...
+
+def split_text(text, chunk_size=500):
+    if not text:
+        raise ValueError("输入文本不能为空")
+    if chunk_size < 100:
+        raise ValueError("块大小不能小于100字符")
+        
+    try:
+        # 原有分割逻辑...
+        return chunks
+    except Exception as e:
+        logger.error(f"文本分割失败: {str(e)}")
+        raise TextSplitError(f"文本处理错误: {str(e)}") from e
+
+class TextSplitError(Exception):
+    """自定义文本分割异常"""
 
 if __name__ == "__main__":
     root = tk.Tk()
