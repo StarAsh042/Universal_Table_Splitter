@@ -1,6 +1,7 @@
 # Universal Table Splitter / 通用表格分割器
 
-![Universal Table Splitter](https://github.com/user-attachments/assets/930ed667-f5a4-4756-8c4e-ce6689b938de)
+
+![Universal_Table_Splitter](https://github.com/user-attachments/assets/929b4a94-fd73-4ae7-8d58-c6e1d19d9c8d)
 
 一款基于Python的跨平台GUI表格分割工具，支持多种文件格式和智能导出选项，自动适应系统主题。
 
