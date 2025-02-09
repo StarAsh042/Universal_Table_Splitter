@@ -22,12 +22,21 @@ import queue
 import ctypes
 import pandas as pd
 import webbrowser
+import logging
+from functools import lru_cache
+
+# 初始化支持拖放的根窗口
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    root = TkinterDnD.Tk()
+except ImportError:
+    root = tk.Tk()
 
 # 全局配置
 LANGUAGES = {
     "cn": {
         "title": "通用表格分割器",
-        "input_btn": "选择输入文件",
+        "input_btn": "选择输入文件(支持拖放)",
         "output_btn": "选择输出目录 (可选)",
         "size_label": "每份行数:",
         "format_label": "编号格式:",
@@ -48,7 +57,7 @@ LANGUAGES = {
     },
     "en": {
         "title": "Universal Table Splitter",
-        "input_btn": "Select Input File",
+        "input_btn": "Select Input File (Drag and Drop Supported)",
         "output_btn": "Select Output Directory (Optional)",
         "size_label": "Rows per chunk:",
         "format_label": "Number format:",
@@ -86,6 +95,30 @@ EXPORT_FORMATS = {
     'html': {'writer': 'to_html', 'ext': '.html', 'options': {'index': False}}
 }
 
+class SplitStrategy:
+    @staticmethod
+    def by_sentence(text):
+        # 按句子分割实现
+        pass
+    
+    @staticmethod 
+    def by_fixed_length(text, chunk_size):
+        # 固定长度分割
+        pass
+        
+    @staticmethod
+    def by_paragraph(text):
+        # 按段落分割
+        pass
+
+def get_splitter(method='sentence'):
+    strategies = {
+        'sentence': SplitStrategy.by_sentence,
+        'fixed': SplitStrategy.by_fixed_length,
+        'paragraph': SplitStrategy.by_paragraph
+    }
+    return strategies.get(method, SplitStrategy.by_sentence)
+
 class UniversalSplitterApp:
     def __init__(self, root):
         self.root = root
@@ -94,7 +127,10 @@ class UniversalSplitterApp:
         self.setup_theme()
         self.setup_ui()
         self.center_window()
-        self.about_window = None # 关于窗口跟踪
+        self.about_window = None
+        self.setup_dnd()
+        self.progress_queue = queue.Queue()
+        self.check_queue()
 
     def setup_theme(self):
         """检测系统主题"""
@@ -178,7 +214,7 @@ class UniversalSplitterApp:
         bottom_frame = ttk.Frame(main_frame)
         bottom_frame.pack(fill=tk.X, pady=5)
         
-        # 左下角语言切换
+        # 语言切换
         self.lang_btn = ttk.Button(
             bottom_frame,
             text=LANGUAGES[self.current_lang]['lang_btn'],
@@ -186,17 +222,13 @@ class UniversalSplitterApp:
         )
         self.lang_btn.pack(side=tk.LEFT, anchor=tk.SW)
         
-        # 右下角关于
+        # 关于按钮
         self.about_btn = ttk.Button(
             bottom_frame,
             text=LANGUAGES[self.current_lang]['about_btn'],
             command=self.show_about
         )
         self.about_btn.pack(side=tk.RIGHT, anchor=tk.SE)
-        
-        # 队列初始化
-        self.progress_queue = queue.Queue()
-        self.check_queue()
         
     def create_file_selector(self, parent, btn_text, command, is_dir=False):
         """创建文件选择组件"""
@@ -227,8 +259,7 @@ class UniversalSplitterApp:
             
             # 自动设置输出目录
             if not self.output_entry.get():
-                output_dir = os.path.dirname(path)
-                self.output_entry.insert(0, output_dir)
+                self.choose_output(auto=True)
                 
             # 更新导出格式
             ext = os.path.splitext(path)[1].lower()
@@ -237,12 +268,17 @@ class UniversalSplitterApp:
             if self.export_format.get() not in available_formats:
                 self.export_format.set(available_formats[0])
                 
-    def choose_output(self):
+    def choose_output(self, auto=False):
         """选择输出目录"""
-        path = filedialog.askdirectory()
-        if path:
+        if auto:
+            path = os.path.dirname(self.input_entry.get())
             self.output_entry.delete(0, tk.END)
             self.output_entry.insert(0, path)
+        else:
+            path = filedialog.askdirectory()
+            if path:
+                self.output_entry.delete(0, tk.END)
+                self.output_entry.insert(0, path)
             
     def toggle_operation(self):
         """开始/取消操作"""
@@ -387,28 +423,20 @@ class UniversalSplitterApp:
     def update_ui_text(self):
         """更新界面文本"""
         lang = LANGUAGES[self.current_lang]
-        
-        # 更新标题
         self.root.title(lang['title'])
-        
-        # 更新按钮
         self.input_entry.master.children['!button'].config(text=lang['input_btn'])
         self.output_entry.master.children['!button'].config(text=lang['output_btn'])
         self.start_btn.config(text=lang['start_btn'])
         self.lang_btn.config(text=lang['lang_btn'])
         self.about_btn.config(text=lang['about_btn'])
-        
-        # 更新标签
         self.size_label.config(text=lang['size_label'])
         self.format_label.config(text=lang['format_label'])
         self.export_label.config(text=lang['export_label'])
-        
-        # 更新状态
         if not self.status.cget('text').startswith('Processing'):
             self.status.config(text=lang['status_ready'])
         
     def show_about(self):
-        """显示/隐藏关于窗口"""
+        """显示关于窗口"""
         if self.about_window and self.about_window.winfo_exists():
             self.about_window.destroy()
             self.about_window = None
@@ -431,7 +459,6 @@ class UniversalSplitterApp:
         text_frame = ttk.Frame(self.about_window)
         text_frame.pack(padx=20, pady=15)
         
-        # 可点击的GitHub链接
         def open_github(event):
             webbrowser.open("https://github.com/StarAsh042")
             
@@ -444,14 +471,7 @@ class UniversalSplitterApp:
                 lbl = ttk.Label(text_frame, text=line)
             lbl.pack(anchor=tk.W)
         
-        # 窗口关闭处理
         self.about_window.protocol("WM_DELETE_WINDOW", lambda: self.about_window.destroy())
-        
-    def update_about_window(self):
-        """更新关于窗口内容"""
-        if self.about_window and self.about_window.winfo_exists():
-            self.about_window.destroy()
-            self.create_about_window()
         
     def show_error(self, message):
         """显示错误"""
@@ -468,7 +488,31 @@ class UniversalSplitterApp:
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f'+{x}+{y}')
 
+    def setup_dnd(self):
+        """配置拖放支持"""
+        try:
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind('<<Drop>>', self.handle_drop)
+        except AttributeError:
+            self.root.after(100, lambda: 
+                messagebox.showinfo("提示", 
+                    LANGUAGES[self.current_lang]['errors']['missing_dep'] + " tkinterdnd2\n可使用传统文件选择方式"))
+                    
+    def handle_drop(self, event):
+        """处理拖放文件"""
+        files = event.data.split()
+        if files:
+            path = files[0].strip("{}")
+            if os.path.isfile(path):
+                self.input_entry.delete(0, tk.END)
+                self.input_entry.insert(0, path)
+                self.choose_output(auto=True)
+                ext = os.path.splitext(path)[1].lower()
+                available_formats = SUPPORTED_EXTS.get(ext, {}).get('formats', ['csv'])
+                self.format_combo['values'] = available_formats
+                if self.export_format.get() not in available_formats:
+                    self.export_format.set(available_formats[0])
+
 if __name__ == "__main__":
-    root = tk.Tk()
     app = UniversalSplitterApp(root)
     root.mainloop()
