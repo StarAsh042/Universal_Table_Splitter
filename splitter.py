@@ -57,7 +57,7 @@ LANGUAGES = {
     },
     "en": {
         "title": "Universal Table Splitter",
-        "input_btn": "Select Input File (Drag and Drop Supported)",
+        "input_btn": "Select Input File(Drag and Drop Supported)",
         "output_btn": "Select Output Directory (Optional)",
         "size_label": "Rows per chunk:",
         "format_label": "Number format:",
