@@ -20,6 +20,11 @@
 | `python-dist` | `windows-latest` | `*.whl`、`*.tar.gz`、`SHA256SUMS.txt`（纯 Python，跨平台） | 标签 `v*` / 手动 |
 | `release` | `windows-latest` | 创建/更新 **GitHub Release** 并附上前两个作业的全部产物 | 仅标签 `v*` |
 
+> **附件名说明**：`gh` 会把非 ASCII 附件名改写成 `default.<ext>`（实测复现），
+> 因此发布用的 exe 统一命名为 **`UniversalTableSplitter.exe`**（并附同名 `.sha256`）。
+> exe **内部**的产品名与版本资源仍是「通用表格分割器」，本地 `packaging\build.bat`
+> 也照旧输出 `表格分割器.exe` —— 只有上传到 Release 的文件名是 ASCII。
+
 打包用的是仓库里的 `packaging/table_splitter.spec`，与本地 `packaging\build.bat`
 是同一份配置：exe 内置 Python 与全部依赖，自带版本资源（属性里能看到版本号）。
 

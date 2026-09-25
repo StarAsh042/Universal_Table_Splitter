@@ -61,11 +61,13 @@
   （装不下的字符降级为 `?`，中文控制台 cp936 / UTF-8 的输出不受影响），
   英文 Windows 上运行 CLI 也不会再因为中文文案或中文路径而中断；
   工作流同时设置 `PYTHONUTF8=1`，让 CI 日志里的中文保持可读。
-- **修复发布附件的中文名被改写**：发布作业原先用 Git Bash 调用 `gh`，而 runner 的 ANSI
-  代码页是 cp1252，中文文件名在 `bash → gh.exe` 的 argv 转换中被丢弃 ——
-  上传前还是 `表格分割器.exe`，上传后就变成了 `default.exe`（`exe.sha256` 同理）。
-  现在改用 PowerShell 调用 `gh`（Windows 下 argv 走 UTF-16，中文不会丢），
-  并新增「附件名校验」步骤：一旦名字与产物不一致就直接让工作流失败，不再静默发布错名字。
+- **修复发布附件名被改写为 `default.exe`**：实测（本地用 PowerShell / Python 直接调 `gh`
+  同样复现）**`gh` 会把非 ASCII 附件名改写成 `default.<ext>`**，与调用方是 bash 还是
+  PowerShell 无关 —— `表格分割器.exe` 就是这样变成 `default.exe` 的。
+  现在发布前的产物统一改名为 ASCII 的 `UniversalTableSplitter.exe`（并重新生成校验和）：
+  exe **内部**的中文产品名与版本资源不受影响（窗口标题、属性里的「通用表格分割器」照旧），
+  本地 `packaging\build.bat` 也仍然输出中文文件名。
+  另新增「附件名校验」步骤：附件名与产物不一致时直接让工作流失败，不再静默发布错名字。
 
 ### 安全
 

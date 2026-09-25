@@ -107,21 +107,35 @@ jobs:
           --distpath ${{ env.DIST_DIR }}
           --workpath build
 
-      - name: 确认产物生成
+      - name: 规范产物文件名（发布必须用 ASCII 名）
+        # 实测：gh 会把非 ASCII 附件名改写成 default.<ext>（表格分割器.exe → default.exe），
+        # 因此发布用的文件名统一改成 ASCII；exe **内部**的产品名与版本资源仍是中文
+        # （窗口标题、属性里的 通用表格分割器 都不受影响），本地 build.bat 也照旧输出中文名。
         shell: pwsh
+        env:
+          RELEASE_EXE_NAME: UniversalTableSplitter.exe
         run: |
-          $exe = Get-ChildItem -Path $env:DIST_DIR -Filter *.exe -File
-          if (-not $exe) { Write-Error "打包结束但没有找到 exe"; exit 1 }
-          foreach ($file in $exe) { Write-Host ("{0}  {1:N1} MB" -f $file.Name, ($file.Length / 1MB)) }
+          # 兜底：环境变量缺失时用默认名，避免生成 ".sha256" 这种垃圾文件名
+          $releaseName = $env:RELEASE_EXE_NAME
+          if ([string]::IsNullOrWhiteSpace($releaseName)) { $releaseName = 'UniversalTableSplitter.exe' }
 
-      - name: 生成校验和
-        shell: pwsh
-        run: |
-          Get-ChildItem -Path $env:DIST_DIR -Filter *.exe -File | ForEach-Object {
-            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)" | Out-File -LiteralPath "$($_.FullName).sha256" -Encoding utf8
+          $exe = Get-ChildItem -Path $env:DIST_DIR -Filter *.exe -File | Select-Object -First 1
+          if (-not $exe) { Write-Error "打包结束但没有找到 exe"; exit 1 }
+          Write-Host ("原始产物: {0}  {1:N1} MB" -f $exe.Name, ($exe.Length / 1MB))
+
+          Remove-Item -Path (Join-Path $env:DIST_DIR "*.sha256") -ErrorAction SilentlyContinue
+          if ($exe.Name -ne $releaseName) {
+            Rename-Item -LiteralPath $exe.FullName -NewName $releaseName
           }
-          Get-ChildItem -Path $env:DIST_DIR -Filter *.sha256 | ForEach-Object { Get-Content -LiteralPath $_.FullName }
+
+          $target = Join-Path $env:DIST_DIR $releaseName
+          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { Write-Error "改名后找不到 $releaseName"; exit 1 }
+          $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLower()
+          "$hash  $releaseName" | Out-File -LiteralPath "$target.sha256" -Encoding utf8
+
+          Write-Host "发布用产物："
+          Get-ChildItem -Path $env:DIST_DIR -File | ForEach-Object { Write-Host ("  {0}" -f $_.Name) }
+          Get-Content -LiteralPath "$target.sha256"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -189,9 +203,8 @@ jobs:
           merge-multiple: true
 
       - name: 创建或更新 Release
-        # 必须用 PowerShell 调用 gh：runner 的 ANSI 代码页是 cp1252，
-        # 经 Git Bash 调用 gh.exe 时中文文件名会在 argv 转换中丢失
-        # （1.1.0 首次发布时「表格分割器.exe」就被改写成了 default.exe）
+        # 用 pwsh 调用 gh：Windows 下 argv 走 UTF-16，路径含中文/空格都不会丢；
+        # 注意附件**名**仍会被 gh 改写成 default.<ext>，所以上传的产物已在上一步改成 ASCII 名
         shell: pwsh
         env:
           # 优先用仓库 Secret `Splitter`；未配置时回退到内置令牌
