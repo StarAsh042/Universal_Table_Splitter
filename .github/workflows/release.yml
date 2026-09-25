@@ -182,11 +182,6 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
-    defaults:
-      # Windows runner 默认是 pwsh；这段编排逻辑用 bash 更顺手，
-      # windows-latest 自带 Git Bash，显式声明避免歧义
-      run:
-        shell: bash
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -194,6 +189,10 @@ jobs:
           merge-multiple: true
 
       - name: 创建或更新 Release
+        # 必须用 PowerShell 调用 gh：runner 的 ANSI 代码页是 cp1252，
+        # 经 Git Bash 调用 gh.exe 时中文文件名会在 argv 转换中丢失
+        # （1.1.0 首次发布时「表格分割器.exe」就被改写成了 default.exe）
+        shell: pwsh
         env:
           # 优先用仓库 Secret `Splitter`；未配置时回退到内置令牌
           GH_TOKEN: ${{ secrets.Splitter || secrets.GITHUB_TOKEN }}
@@ -203,46 +202,61 @@ jobs:
           TAG: ${{ github.ref_name }}
           DRAFT: ${{ github.event.inputs.draft }}
         run: |
-          set -euo pipefail
-          echo "使用的令牌来源：$TOKEN_SOURCE"
-          echo "将要发布的产物："
-          ls -R release-assets
+          $ErrorActionPreference = 'Stop'
+          Write-Host "使用的令牌来源：$env:TOKEN_SOURCE"
 
-          if [ "$DRAFT" = "true" ]; then
-            draft_flag="--draft"
-          else
-            draft_flag=""
-          fi
+          $assets = @(Get-ChildItem -Path release-assets -File -Recurse | Sort-Object Name)
+          if ($assets.Count -eq 0) { throw "release-assets 下没有任何产物" }
+          Write-Host "将要发布的产物："
+          $assets | ForEach-Object { Write-Host ("  {0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
+          $paths = @($assets.FullName)
 
-          hint() {
-            echo "::error::创建/更新 Release 失败，按下面顺序处理："
-            echo "  1) 令牌权限：确认 Secret Splitter 的有效期与权限（classic 需 repo；fine-grained 需本仓库 Contents: Read and write）"
-            echo "  2) 未配置 Splitter 时用的是内置 GITHUB_TOKEN：仓库 Settings → Actions → General →"
-            echo "     Workflow permissions 改为 Read and write permissions"
-            echo "  3) 若提示标签受保护或 Release 被锁定：检查 Settings → Tags 与组织策略"
+          function Show-Hint {
+            Write-Host "::error::创建/更新 Release 失败，按下面顺序处理："
+            Write-Host "  1) 令牌权限：确认 Secret Splitter 的有效期与权限（classic 需 repo；fine-grained 需本仓库 Contents: Read and write）"
+            Write-Host "  2) 未配置 Splitter 时用的是内置 GITHUB_TOKEN：仓库 Settings → Actions → General → Workflow permissions 改为 Read and write permissions"
+            Write-Host "  3) 若提示标签受保护或 Release 被锁定：检查 Settings → Tags 与组织策略"
           }
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG 已存在，追加产物（同名文件覆盖）"
-            if ! gh release upload "$TAG" release-assets/* --clobber; then
-              hint
-              exit 1
-            fi
-          else
-            echo "创建 Release $TAG"
-            # shellcheck disable=SC2086
-            if ! gh release create "$TAG" release-assets/* \
-              --title "$TAG" \
-              --generate-notes \
-              $draft_flag; then
-              hint
-              exit 1
-            fi
-          fi
+          # 探测是否已存在；无论 runner 是否把原生命令的失败升级为异常，都能安全落到两个分支
+          $exists = $false
+          try {
+            gh release view $env:TAG *> $null
+            $exists = $LASTEXITCODE -eq 0
+          } catch {
+            $exists = $false
+          }
 
-      - name: 输出发布结果
+          if ($exists) {
+            Write-Host "Release $env:TAG 已存在，追加产物（同名覆盖）"
+            gh release upload $env:TAG @paths --clobber
+            if ($LASTEXITCODE -ne 0) { Show-Hint; exit 1 }
+          } else {
+            Write-Host "创建 Release $env:TAG"
+            $createArgs = @('release', 'create', $env:TAG) + $paths +
+                          @('--title', $env:TAG, '--generate-notes')
+            if ($env:DRAFT -eq 'true') { $createArgs += '--draft' }
+            gh @createArgs
+            if ($LASTEXITCODE -ne 0) { Show-Hint; exit 1 }
+          }
+
+      - name: 校验附件名与链接
+        # 中文名在编码转换中被改写过一次，这里显式断言，避免再次静默发布错名字
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.Splitter || secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-        run: gh release view "$TAG" --json url,assets --jq '.url, (.assets[].name)'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $published = @(gh release view $env:TAG --json url,assets --jq '.url, (.assets[].name)')
+          if ($LASTEXITCODE -ne 0) { throw "无法读取 Release 信息" }
+          $published | ForEach-Object { Write-Host $_ }
+
+          $expected = @(Get-ChildItem -Path release-assets -Filter *.exe -File -Recurse).Name
+          foreach ($name in $expected) {
+            if ($published -notcontains $name) {
+              throw "附件名被改写：期望 '$name'，实际为 $($published -join ' / ')"
+            }
+          }
+          Write-Host "附件名校验通过：$($expected -join ', ')"
