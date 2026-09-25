@@ -1,0 +1,25 @@
+# 提交前自动检查：与 CI 使用同一套规则，避免"本地过了、CI 挂了"。
+# 启用：pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.10
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        files: \.(py|toml|yaml|yml|md|txt|cfg|ini)$
+      - id: end-of-file-fixer
+        files: \.(py|toml|yaml|yml|md|txt|cfg|ini)$
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        files: \.(py|toml|yaml|yml)$

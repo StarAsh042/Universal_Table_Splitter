@@ -1,18 +1,61 @@
+# ----------------------------------------------------------------- Python 运行时
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
+
+# ----------------------------------------------------------------- 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# ----------------------------------------------------------------- 工具缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# ----------------------------------------------------------------- 编辑器与 IDE
+.idea/
+.vscode/
+*.swp
+*~
+.codebuddy/
+
+# ----------------------------------------------------------------- PyInstaller 产物
+# packaging/build.bat 的默认输出：输出目录 + 临时构建目录 + 构建日志都在一起
+packaging/output/
+*.spec.bak
 通用表格分割器.spec
 Universal Table Splitter.jpg
-build/通用表格分割器/通用表格分割器.pkg
-build/通用表格分割器/Analysis-00.toc
-build/通用表格分割器/base_library.zip
-build/通用表格分割器/EXE-00.toc
-build/通用表格分割器/PKG-00.toc
-build/通用表格分割器/PYZ-00.pyz
-build/通用表格分割器/PYZ-00.toc
-build/通用表格分割器/warn-通用表格分割器.txt
-build/通用表格分割器/xref-通用表格分割器.html
-build/通用表格分割器/localpycs/pyimod01_archive.pyc
-build/通用表格分割器/localpycs/pyimod02_importers.pyc
-build/通用表格分割器/localpycs/pyimod03_ctypes.pyc
-build/通用表格分割器/localpycs/pyimod04_pywin32.pyc
-build/通用表格分割器/localpycs/struct.pyc
 dist/通用表格分割器.exe
 dist/Universal Table Splitter.zip
+build/通用表格分割器/
+
+# ----------------------------------------------------------------- 本地测试数据
+# 大体积测试数据只用于本机慢速集成测试（pytest -m slow），不进版本库
+# 目录说明（tests/data/README.md）本身要保留，因此只忽略数据文件本身
+tests/data/*.csv
+tests/data/*.tsv
+tests/data/*.xlsx
+tests/data/*.xls
+tests/data/*.json
+*.big.csv
+src_*.csv
+
+# ----------------------------------------------------------------- 本地试跑产物
+.tmp_*/
+.tmp_*
+out/
+sample_out/
+*.part.*

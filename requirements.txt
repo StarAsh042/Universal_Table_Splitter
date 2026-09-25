@@ -1,6 +1,21 @@
-pandas>=2.0.3
-ttkbootstrap>=1.10.0
-openpyxl>=3.1.2
-xlrd>=2.0.1
-pywin32>=306
-python-dotenv>=1.0.0  # 可选，如需环境变量支持
+# 运行时依赖（上游事实来源是 pyproject.toml，此处仅便于 `pip install -r`）
+#
+# 推荐安装方式（含开发工具）：
+#     pip install -e ".[dev]"
+#
+# 说明：
+# - 全部依赖都带兼容上界：pandas 3.x 之类的破坏性变更不会再"静默"弄坏功能
+#   （1.1.0 修复的 .xls 导出失败正是 pandas 2.0 移除 xlwt 写入引擎导致的）；
+# - python-dotenv 已移除：代码从未使用；
+# - pywin32 仅在 Windows 安装；
+# - tkinterdnd2 是可选能力（拖放），未安装时界面自动降级为"选择文件"按钮；
+# - xlrd 只用于读取旧版 .xls。pandas 2.x 已无法写出 .xls，因此本项目不再提供该导出格式。
+
+pandas>=2.0.3,<3.0
+ttkbootstrap>=1.10,<2
+openpyxl>=3.1.2,<4
+xlrd>=2.0.1,<3
+pywin32>=306; sys_platform == "win32"
+
+# 可选：拖放支持（Windows / macOS / Linux）
+# tkinterdnd2>=0.3
