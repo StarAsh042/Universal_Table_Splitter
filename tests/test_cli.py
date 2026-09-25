@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -9,6 +14,8 @@ from universal_table_splitter import cli
 from universal_table_splitter.settings import Settings
 
 from .conftest import ROW_COUNT
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(autouse=True)
@@ -141,3 +148,41 @@ def test_cli_uses_settings_language_by_default(monkeypatch, basic_csv, out_dir, 
     monkeypatch.setattr(Settings, "load", classmethod(lambda cls, path=None: Settings(lang="en")))
     cli.main([str(basic_csv), "-o", str(out_dir), "-n", "5"])
     assert "Done" in capsys.readouterr().out
+
+
+def test_cli_survives_narrow_console_encoding(tmp_path):
+    """英文 Windows 的控制台是 cp1252：中文文案与中文路径都不能把 CLI 打崩。
+
+    GitHub 的 ``windows-latest`` 正是这种环境（1.1.0 的打包就因此失败），
+    这里连输入/输出路径都用中文，通过子进程真实执行一遍。
+    """
+    workspace = tmp_path / "中文目录"
+    workspace.mkdir()
+    source = workspace / "数据.csv"
+    source.write_text("id,artist\n1,甲\n2,乙\n", encoding="utf-8")
+    target = workspace / "输出"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "universal_table_splitter",
+            str(source),
+            "-o",
+            str(target),
+            "-n",
+            "1",
+            "--lang",
+            "cn",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "cp1252"},
+        cwd=PROJECT_ROOT,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "UnicodeEncodeError" not in result.stderr
+    assert sorted(path.name for path in target.glob("*.csv")) == ["数据_001.csv", "数据_002.csv"]

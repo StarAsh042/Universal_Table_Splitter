@@ -28,6 +28,17 @@ import sys
 import tempfile
 from pathlib import Path
 
+# 英文 Windows（含 GitHub 的 windows runner）控制台编码是 cp1252，直接 print 中文会抛
+# UnicodeEncodeError 并让整个打包失败；先把标准流的编码错误策略改成"替换"，
+# 中文控制台（cp936 / UTF-8）的输出不受任何影响。
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        try:
+            _reconfigure(errors="replace")
+        except (ValueError, OSError):  # pragma: no cover - 流不可重配置时忽略
+            pass
+
 from PyInstaller.utils.hooks import collect_all
 
 PROJECT_ROOT = Path(SPECPATH).resolve().parent

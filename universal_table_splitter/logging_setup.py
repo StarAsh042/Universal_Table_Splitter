@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import logging.handlers
 import sys
@@ -25,6 +26,25 @@ def log_file_path() -> Path:
     return log_dir() / LOG_FILE_NAME
 
 
+def make_console_encoding_safe() -> None:
+    """让中文输出在"窄编码"控制台下也不至于让程序崩掉。
+
+    英文 Windows 的控制台编码是 cp1252，此时 ``print("完成")`` 会抛
+    ``UnicodeEncodeError`` —— CLI 会当场中断（本项目在 GitHub 的 windows
+    runner 上真实踩过一次，打包脚本因此直接失败）。
+
+    把这些流改成 ``errors="replace"``：装不下的字符降级成 ``?``，
+    中文控制台（cp936 / UTF-8）的输出完全不受影响。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue  # 被替换成非文本流（如 GUI 环境下的 None）时跳过
+        # 流已关闭或不可重配置时（例如已重定向）直接跳过，不影响主流程
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(errors="replace")
+
+
 def setup_logging(
     level: int = logging.INFO,
     console_level: int = logging.WARNING,
@@ -39,6 +59,8 @@ def setup_logging(
     target = log_file_path()
     if _configured and not force:
         return target
+    # 控制台日志里会出现中文，先确保窄编码控制台不会因此抛异常
+    make_console_encoding_safe()
     if force:
         root = logging.getLogger()
         for handler in list(root.handlers):

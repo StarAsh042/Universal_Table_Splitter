@@ -50,6 +50,9 @@ env:
   PYTHON_VERSION: "3.12"
   # PyInstaller 需要一个 ASCII 目录名，exe 自身仍是中文名（由 spec 决定）
   DIST_DIR: dist
+  # runner 是英文环境（控制台编码 cp1252），强制 Python 走 UTF-8，日志里的中文才不乱码；
+  # 代码本身也已做过降级处理（见 logging_setup.make_console_encoding_safe），这里是双保险
+  PYTHONUTF8: "1"
 
 jobs:
   # ---------------------------------------------------------------------------
