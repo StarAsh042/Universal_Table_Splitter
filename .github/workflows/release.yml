@@ -63,18 +63,21 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
       - name: 安装运行依赖与 PyInstaller
-        # 只装打包所需依赖：不安装 .[dev]，CI 不跑测试
+        # 必须装 [dnd] 这个可选 extra：拖放依赖 tkinterdnd2 不在默认安装里，
+        # 缺了它 spec 就收集不到 tkdnd 运行库，打包版会禁用拖放（1.1.0 发布版就踩过）。
+        # 不安装 .[dev]：CI 不跑测试。
         run: |
           python -m pip install --upgrade pip
-          python -m pip install . pyinstaller
+          python -m pip install ".[dnd]" pyinstaller
+          python -c "import tkinterdnd2; print('tkinterdnd2 ok:', tkinterdnd2.__file__)"
 
       - name: 校验标签与包内版本号一致
         # 防止出现「Release 标着 v1.2.0、exe 内嵌版本仍是 1.1.0」这种错配
@@ -137,7 +140,7 @@ jobs:
           Get-ChildItem -Path $env:DIST_DIR -File | ForEach-Object { Write-Host ("  {0}" -f $_.Name) }
           Get-Content -LiteralPath "$target.sha256"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-exe
           path: |
@@ -154,9 +157,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -178,7 +181,7 @@ jobs:
           $lines | Out-File -LiteralPath (Join-Path $env:DIST_DIR "SHA256SUMS.txt") -Encoding utf8
           $lines | ForEach-Object { Write-Host $_ }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-dist
           path: ${{ env.DIST_DIR }}/*
@@ -197,7 +200,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true

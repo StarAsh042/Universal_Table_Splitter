@@ -365,7 +365,9 @@ SHA256 校验和。所有作业都跑在 `windows-latest` 上，**不在 Ubuntu 
 Linux 需安装中文字体（如 `fonts-noto-cjk`）；Windows/macOS 默认支持。
 
 **Q：拖放没反应？**
-拖放需要 `pip install tkinterdnd2`；未安装时启动会提示，可继续用「选择输入文件」按钮。
+源码运行需要 `pip install tkinterdnd2`（或 `pip install -e ".[dnd]"`），未安装时启动会提示，
+仍可继续用「选择输入文件」按钮。**打包好的 exe 已内置拖放支持**、不需要另装；
+若 exe 仍提示缺少该依赖，说明那个发布版本漏装了可选依赖（1.1.0 存在此问题），请换用更新版本。
 
 **Q：想批量/自动化处理？**
 用 CLI（见上文），或直接调用 `universal_table_splitter.core.run_split`。

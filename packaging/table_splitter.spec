@@ -141,11 +141,22 @@ for package in ("ttkbootstrap", "openpyxl"):
 # tkinterdnd2 是可选依赖（拖放）。app 里是延迟导入，PyInstaller 静态分析看不到，
 # 必须显式收集；否则打包版会因为找不到 tkdnd 运行库而禁用拖放。
 # 它自带的 tkdnd 目录里有各平台的 .dll/.tcl，属于纯数据文件，同样要一并收集。
+#
+# 两种失败要区别对待（1.1.0 的发布版就是"没装 extra + 静默跳过"导致拖放被禁用）：
+#   · 没装 tkinterdnd2      -> 打出来的 exe 不含拖放，仅告警，方便不要拖放的用户
+#   · 装了却收不到任何文件  -> 一定是收集逻辑坏了，直接让构建失败，别发出缺功能的包
+# 提示信息保持纯 ASCII：英文 Windows（cp1252）控制台装不下中文，会直接抛异常。
 try:
-    dnd_datas, dnd_binaries, dnd_hidden = collect_all("tkinterdnd2")
-except Exception:  # 未安装该可选依赖时跳过
-    pass
+    import tkinterdnd2  # noqa: F401
+except ImportError as exc:
+    print(f"[table_splitter.spec] WARNING: tkinterdnd2 not installed ({exc}) -> drag and drop disabled")
 else:
+    dnd_datas, dnd_binaries, dnd_hidden = collect_all("tkinterdnd2")
+    if not (dnd_datas or dnd_binaries):
+        raise SystemExit(
+            "[table_splitter.spec] tkinterdnd2 is installed but no tkdnd runtime was collected; "
+            "refusing to build a bundle without drag and drop"
+        )
     datas += dnd_datas
     binaries += dnd_binaries
     hiddenimports += dnd_hidden

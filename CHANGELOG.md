@@ -3,6 +3,27 @@
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 结构，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.1] - 2026-09-25
+
+修掉两个只在**自动发布链路**上暴露的问题（1.1.0 的 exe 里缺拖放、Actions 日志有 Node 弃用警告）。
+
+### 修复
+
+- **打包版（exe）缺失拖放功能**：`tkinterdnd2` 是可选 extra，而自动打包的安装命令只有
+  `pip install .`（没带 `[dnd]`），spec 里又用 `except: pass` 静默跳过 —— 于是 1.1.0 的 exe
+  里没有 tkdnd 运行库，启动即提示「缺少可选依赖 tkinterdnd2，拖放功能不可用」。
+  现在工作流安装 `.[dnd]` 并紧接着断言 `import tkinterdnd2`；spec 也区分两种情况：
+  **未安装** → 明确告警后继续（不要拖放的用户不受阻挡），**已安装却收不到任何 tkdnd 文件**
+  → 直接让构建失败，不再发出缺功能的包。
+
+### 变更
+
+- **工作流 action 升级到最新主版本**（消除日志里的 Node 20 弃用警告）：
+  `actions/checkout@v7`、`actions/setup-python@v7`、`actions/upload-artifact@v7`、
+  `actions/download-artifact@v8`。四者均已运行在 `node24` 上，且本工作流用到的输入参数
+  （`python-version`、`cache`、`name`、`path`、`if-no-files-found`、`retention-days`、
+  `merge-multiple`）在新版本中依然存在，调用方式无需改动。
+
 ## [1.1.0] - 2026-09-23
 
 一次以**健壮性与可维护性**为核心的重构。逐条对应 [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md)
