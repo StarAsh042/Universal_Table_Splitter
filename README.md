@@ -391,7 +391,3 @@ logic/validation between the GUI and the CLI (`--lang en` for English messages).
 
 ## 许可
 [MIT License](LICENSE)
-  [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) 中的评估结论
-- 许可证：[GNU Affero General Public License v3.0](LICENSE)
-
-Powered by StarAsh042
