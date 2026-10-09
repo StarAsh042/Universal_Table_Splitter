@@ -1,0 +1,283 @@
+# =============================================================================
+#  Release —— 自动打包 + 自动发布（仅 Windows）
+#
+#  这个工作流**只做打包与发布，不运行任何测试**（lint / pytest 均不在 CI 中执行，
+#  请用本地 pre-commit 与 pytest 把关）。
+#
+#  本工作流不在 Ubuntu / Linux 上打包，也不产出任何 Linux 制品：
+#  所有作业都跑在 windows-latest 上，产物只有 exe 与纯 Python 分发包。
+#
+#  触发方式
+#    1) 推送版本标签：git tag v1.0.0 && git push origin v1.0.0
+#    2) 手动：Actions → Release → Run workflow
+#       （在标签上手动触发 → 发布该标签；在分支上手动触发 → 只产出构建物，不建 Release）
+#
+#  产出（全部附加到 GitHub Release）
+#    · <名称>.exe             Windows 单文件可执行程序
+#    · <名称>.exe.sha256      exe 校验和
+#    · *.whl / *.tar.gz       Python 分发包（纯 Python，跨平台）
+#    · SHA256SUMS.txt         分发包校验和
+#
+#  令牌：使用仓库 Secret `Splitter`（${{ secrets.Splitter }}）；
+#  未配置时自动回退到内置 ${{ secrets.GITHUB_TOKEN }}，实际使用的来源会打印在日志里。
+#  创建方式与所需权限见 docs/RELEASE.md
+# =============================================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: "创建草稿 Release（不立即公开）"
+        required: false
+        default: false
+        type: boolean
+
+# 默认最小权限；需要写权限的作业单独声明（见各 job 的 permissions）
+permissions:
+  contents: read
+
+# 发布流程不允许被后续推送打断，避免出现半个 Release
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  # PyInstaller 需要一个 ASCII 目录名，exe 自身仍是中文名（由 spec 决定）
+  DIST_DIR: dist
+  # runner 是英文环境（控制台编码 cp1252），强制 Python 走 UTF-8，日志里的中文才不乱码；
+  # 代码本身也已做过降级处理（见 logging_setup.make_console_encoding_safe），这里是双保险
+  PYTHONUTF8: "1"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) Windows 单文件 exe
+  # ---------------------------------------------------------------------------
+  windows-exe:
+    name: 打包 Windows exe
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      # CI 保持严格：关掉 ensure_deps 的自动安装。
+      # 上面已经用 `pip install .` 按 pyproject.toml 装了全部依赖；如果这样还缺东西，
+      # 说明 pyproject.toml 漏写了依赖——必须当场失败，而不是被自动补装掩盖过去。
+      UTS_NO_AUTO_INSTALL: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: 安装运行依赖与 PyInstaller
+        # 界面层与拖放都不依赖 tkinter / ttkbootstrap / tkinterdnd2，
+        # 没有可选 extra 需要安装。PySide6 是默认依赖，pip install . 就会带上。
+        # 不安装 .[dev]：CI 不跑测试。
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pyinstaller
+          python -c "import PySide6; print('PySide6 ok:', PySide6.__version__)"
+
+      - name: 校验标签与包内版本号一致
+        # 防止出现「Release 上的版本号和 exe 内嵌版本对不上」这种错配
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $tag = $env:TAG_NAME -replace '^v', ''
+          if ($tag -notmatch '^\d+\.\d+\.\d+') {
+            Write-Host "标签 $env:TAG_NAME 不是 x.y.z 形式，跳过版本校验"
+            exit 0
+          }
+          $expected = $Matches[0]
+          $actual = (python -c "from universal_table_splitter import __version__; print(__version__)").Trim()
+          if ($expected -ne $actual) {
+            $msg = "版本号不一致：标签 $env:TAG_NAME 对应 $expected，但包内 __version__ 是 $actual。" +
+                   "请先把 universal_table_splitter/__init__.py 里的 __version__ 改成 $expected，再重新打标签。"
+            Write-Error $msg
+            exit 1
+          }
+          Write-Host "版本号一致：$actual"
+
+      - name: 打包（PyInstaller 单文件 exe）
+        # 复用仓库内的 spec，与本地 packaging\build.bat 打出来的是同一份配置；
+        # 这里直接用 pyinstaller 命令而不是 build.bat，避免中文批处理在不同代码页的 runner 上产生歧义
+        run: >-
+          python -m PyInstaller --noconfirm --clean
+          packaging/table_splitter.spec
+          --distpath ${{ env.DIST_DIR }}
+          --workpath build
+
+      - name: 规范产物文件名（发布必须用 ASCII 名）
+        # 实测：gh 会把非 ASCII 附件名改写成 default.<ext>（表格分割器.exe → default.exe），
+        # 因此发布用的文件名统一改成 ASCII；exe **内部**的产品名与版本资源仍是中文
+        # （窗口标题、属性里的 通用表格分割器 都不受影响），本地 build.bat 也照旧输出中文名。
+        shell: pwsh
+        env:
+          RELEASE_EXE_NAME: UniversalTableSplitter.exe
+        run: |
+          # 兜底：环境变量缺失时用默认名，避免生成 ".sha256" 这种垃圾文件名
+          $releaseName = $env:RELEASE_EXE_NAME
+          if ([string]::IsNullOrWhiteSpace($releaseName)) { $releaseName = 'UniversalTableSplitter.exe' }
+
+          $exe = Get-ChildItem -Path $env:DIST_DIR -Filter *.exe -File | Select-Object -First 1
+          if (-not $exe) { Write-Error "打包结束但没有找到 exe"; exit 1 }
+          Write-Host ("原始产物: {0}  {1:N1} MB" -f $exe.Name, ($exe.Length / 1MB))
+
+          Remove-Item -Path (Join-Path $env:DIST_DIR "*.sha256") -ErrorAction SilentlyContinue
+          if ($exe.Name -ne $releaseName) {
+            Rename-Item -LiteralPath $exe.FullName -NewName $releaseName
+          }
+
+          $target = Join-Path $env:DIST_DIR $releaseName
+          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { Write-Error "改名后找不到 $releaseName"; exit 1 }
+          $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLower()
+          "$hash  $releaseName" | Out-File -LiteralPath "$target.sha256" -Encoding utf8
+
+          Write-Host "发布用产物："
+          Get-ChildItem -Path $env:DIST_DIR -File | ForEach-Object { Write-Host ("  {0}" -f $_.Name) }
+          Get-Content -LiteralPath "$target.sha256"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-exe
+          path: |
+            ${{ env.DIST_DIR }}/*.exe
+            ${{ env.DIST_DIR }}/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 2) Python 分发包（wheel + sdist，纯 Python，与平台无关）
+  # ---------------------------------------------------------------------------
+  python-dist:
+    name: 打包 Python 分发包
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: 安装构建工具
+        run: python -m pip install --upgrade pip build
+
+      - name: 构建 wheel 与 sdist
+        run: python -m build
+
+      - name: 生成校验和
+        # Windows runner 上没有 sha256sum，改用 PowerShell 的 Get-FileHash
+        shell: pwsh
+        run: |
+          $lines = Get-ChildItem -Path $env:DIST_DIR -File | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          }
+          $lines | Out-File -LiteralPath (Join-Path $env:DIST_DIR "SHA256SUMS.txt") -Encoding utf8
+          $lines | ForEach-Object { Write-Host $_ }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-dist
+          path: ${{ env.DIST_DIR }}/*
+          if-no-files-found: error
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 3) 创建 / 更新 GitHub Release（仅在标签上触发）
+  # ---------------------------------------------------------------------------
+  release:
+    name: 发布 GitHub Release
+    runs-on: windows-latest
+    needs: [windows-exe, python-dist]
+    if: startsWith(github.ref, 'refs/tags/')
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: 创建或更新 Release
+        # 用 pwsh 调用 gh：Windows 下 argv 走 UTF-16，路径含中文/空格都不会丢；
+        # 注意附件**名**仍会被 gh 改写成 default.<ext>，所以上传的产物已在上一步改成 ASCII 名
+        shell: pwsh
+        env:
+          # 优先用仓库 Secret `Splitter`；未配置时回退到内置令牌
+          GH_TOKEN: ${{ secrets.Splitter || secrets.GITHUB_TOKEN }}
+          TOKEN_SOURCE: ${{ secrets.Splitter != '' && 'Splitter' || 'GITHUB_TOKEN' }}
+          # 本作业没有 checkout，gh 无法从 git remote 推断目标仓库，必须显式指定
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          DRAFT: ${{ github.event.inputs.draft }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "使用的令牌来源：$env:TOKEN_SOURCE"
+
+          $assets = @(Get-ChildItem -Path release-assets -File -Recurse | Sort-Object Name)
+          if ($assets.Count -eq 0) { throw "release-assets 下没有任何产物" }
+          Write-Host "将要发布的产物："
+          $assets | ForEach-Object { Write-Host ("  {0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
+          $paths = @($assets.FullName)
+
+          function Show-Hint {
+            Write-Host "::error::创建/更新 Release 失败，按下面顺序处理："
+            Write-Host "  1) 令牌权限：确认 Secret Splitter 的有效期与权限（classic 需 repo；fine-grained 需本仓库 Contents: Read and write）"
+            Write-Host "  2) 未配置 Splitter 时用的是内置 GITHUB_TOKEN：仓库 Settings → Actions → General → Workflow permissions 改为 Read and write permissions"
+            Write-Host "  3) 若提示标签受保护或 Release 被锁定：检查 Settings → Tags 与组织策略"
+          }
+
+          # 探测是否已存在；无论 runner 是否把原生命令的失败升级为异常，都能安全落到两个分支
+          $exists = $false
+          try {
+            gh release view $env:TAG *> $null
+            $exists = $LASTEXITCODE -eq 0
+          } catch {
+            $exists = $false
+          }
+
+          if ($exists) {
+            Write-Host "Release $env:TAG 已存在，追加产物（同名覆盖）"
+            gh release upload $env:TAG @paths --clobber
+            if ($LASTEXITCODE -ne 0) { Show-Hint; exit 1 }
+          } else {
+            Write-Host "创建 Release $env:TAG"
+            $createArgs = @('release', 'create', $env:TAG) + $paths +
+                          @('--title', $env:TAG, '--generate-notes')
+            if ($env:DRAFT -eq 'true') { $createArgs += '--draft' }
+            gh @createArgs
+            if ($LASTEXITCODE -ne 0) { Show-Hint; exit 1 }
+          }
+
+      - name: 校验附件名与链接
+        # 中文名在编码转换中被改写过一次，这里显式断言，避免再次静默发布错名字
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.Splitter || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $published = @(gh release view $env:TAG --json url,assets --jq '.url, (.assets[].name)')
+          if ($LASTEXITCODE -ne 0) { throw "无法读取 Release 信息" }
+          $published | ForEach-Object { Write-Host $_ }
+
+          $expected = @(Get-ChildItem -Path release-assets -Filter *.exe -File -Recurse).Name
+          foreach ($name in $expected) {
+            if ($published -notcontains $name) {
+              throw "附件名被改写：期望 '$name'，实际为 $($published -join ' / ')"
+            }
+          }
+          Write-Host "附件名校验通过：$($expected -join ', ')"
