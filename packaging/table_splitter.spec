@@ -131,7 +131,7 @@ def write_version_resource(version: str) -> Path:
          StringStruct('FileDescription', '通用表格分割器 · 按行数把大表切成多个文件'),
          StringStruct('FileVersion', '{version}'),
          StringStruct('InternalName', '{APP_NAME}'),
-         StringStruct('LegalCopyright', 'GNU AGPL v3.0'),
+         StringStruct('LegalCopyright', 'MIT License'),
          StringStruct('OriginalFilename', '{APP_NAME}.exe'),
          StringStruct('ProductName', '{APP_NAME}'),
          StringStruct('ProductVersion', '{version}')])
